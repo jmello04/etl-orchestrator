@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: etl_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-etl_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etl_password}
+      POSTGRES_DB: ${POSTGRES_DB:-etl_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: etl_api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://etl_user:etl_password@postgres:5432/etl_db
+      APP_ENV: production
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    container_name: etl_prefect
+    ports:
+      - "4200:4200"
+    environment:
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+    command: prefect server start
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
