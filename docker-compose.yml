@@ -13,27 +13,40 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user} -d ${POSTGRES_DB:-etl_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     restart: unless-stopped
+    networks:
+      - etl_network
 
   api:
-    build: .
+    build:
+      context: .
+      target: runtime
     container_name: etl_api
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://etl_user:etl_password@postgres:5432/etl_db
-      APP_ENV: production
-      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql://${POSTGRES_USER:-etl_user}:${POSTGRES_PASSWORD:-etl_password}@postgres:5432/${POSTGRES_DB:-etl_db}
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
+    networks:
+      - etl_network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8000/health').raise_for_status()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   prefect-server:
     image: prefecthq/prefect:3-latest
@@ -42,8 +55,20 @@ services:
       - "4200:4200"
     environment:
       PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER:-etl_user}:${POSTGRES_PASSWORD:-etl_password}@postgres:5432/${POSTGRES_DB:-etl_db}
     command: prefect server start
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+    networks:
+      - etl_network
 
 volumes:
   postgres_data:
+    name: etl_postgres_data
+
+networks:
+  etl_network:
+    name: etl_network
+    driver: bridge
