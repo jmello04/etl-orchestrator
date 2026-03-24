@@ -1,9 +1,8 @@
-import pytest
 import httpx
+import pytest
 import respx
-from unittest.mock import patch
 
-from flows.extract import extrair_cotacoes, APIS
+from flows.extract import APIS, extrair_cotacoes_logica
 
 
 @respx.mock
@@ -41,7 +40,7 @@ def test_extrai_dados_com_sucesso():
         )
     )
 
-    resultado = extrair_cotacoes.fn()
+    resultado = extrair_cotacoes_logica()
 
     assert "USD-BRL" in resultado
     assert "EUR-BRL" in resultado
@@ -54,8 +53,8 @@ def test_extrai_levanta_erro_em_status_http_invalido():
     respx.get(APIS["USD-BRL"]).mock(return_value=httpx.Response(500))
     respx.get(APIS["EUR-BRL"]).mock(return_value=httpx.Response(500))
 
-    with pytest.raises(Exception):
-        extrair_cotacoes.fn()
+    with pytest.raises(httpx.HTTPStatusError):
+        extrair_cotacoes_logica()
 
 
 @respx.mock
@@ -63,5 +62,30 @@ def test_extrai_levanta_erro_resposta_vazia():
     respx.get(APIS["USD-BRL"]).mock(return_value=httpx.Response(200, json=[]))
     respx.get(APIS["EUR-BRL"]).mock(return_value=httpx.Response(200, json=[]))
 
-    with pytest.raises(ValueError):
-        extrair_cotacoes.fn()
+    with pytest.raises(ValueError, match="Resposta inválida"):
+        extrair_cotacoes_logica()
+
+
+@respx.mock
+def test_extrai_estrutura_de_cada_registro():
+    respx.get(APIS["USD-BRL"]).mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"code": "USD", "codein": "BRL", "bid": "5.10", "ask": "5.12",
+                   "high": "5.15", "low": "5.05", "timestamp": "1700000000"}],
+        )
+    )
+    respx.get(APIS["EUR-BRL"]).mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"code": "EUR", "codein": "BRL", "bid": "5.50", "ask": "5.55",
+                   "high": "5.60", "low": "5.45", "timestamp": "1700000000"}],
+        )
+    )
+
+    resultado = extrair_cotacoes_logica()
+
+    registro_usd = resultado["USD-BRL"][0]
+    assert "bid" in registro_usd
+    assert "ask" in registro_usd
+    assert "timestamp" in registro_usd

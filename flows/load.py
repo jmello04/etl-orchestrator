@@ -1,16 +1,17 @@
+import time
+
 import pandas as pd
 from loguru import logger
 from prefect import task
+from sqlalchemy import literal_column
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import text
-import time
+from sqlalchemy.types import Boolean
 
 from app.infra.database.connection import get_engine
 from app.infra.database.models import Cotacao
 
 
-@task(name="carregar-cotacoes")
-def carregar_cotacoes(df: pd.DataFrame) -> int:
+def carregar_cotacoes_logica(df: pd.DataFrame) -> int:
     inicio = time.perf_counter()
     logger.info(f"Iniciando carga de {len(df)} registros no PostgreSQL.")
 
@@ -51,12 +52,16 @@ def carregar_cotacoes(df: pd.DataFrame) -> int:
                         "processado_em": registro.get("processado_em"),
                     },
                 )
+                .returning(
+                    literal_column("(xmax::text::int > 0)", Boolean).label("foi_atualizado")
+                )
             )
             resultado = conn.execute(stmt)
-            if resultado.rowcount == 1:
-                inseridos += 1
-            else:
+            row = resultado.fetchone()
+            if row is not None and row.foi_atualizado:
                 atualizados += 1
+            else:
+                inseridos += 1
 
     duracao = time.perf_counter() - inicio
     logger.success(
@@ -64,3 +69,8 @@ def carregar_cotacoes(df: pd.DataFrame) -> int:
         f"{inseridos} inseridos, {atualizados} atualizados."
     )
     return inseridos + atualizados
+
+
+@task(name="carregar-cotacoes")
+def carregar_cotacoes(df: pd.DataFrame) -> int:
+    return carregar_cotacoes_logica(df)

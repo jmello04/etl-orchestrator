@@ -10,8 +10,9 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import DeclarativeBase
-from datetime import datetime
 
 
 class Base(DeclarativeBase):
@@ -35,7 +36,7 @@ class Cotacao(Base):
     media_venda_periodo = Column(Numeric(12, 4))
     minimo_periodo = Column(Numeric(12, 4))
     maximo_periodo = Column(Numeric(12, 4))
-    processado_em = Column(DateTime, default=datetime.utcnow)
+    processado_em = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     criado_em = Column(DateTime, server_default=func.now())
 
     def to_dict(self):
@@ -60,7 +61,7 @@ class PipelineRun(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     status = Column(String(20), nullable=False, default="running")
-    iniciado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    iniciado_em = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     finalizado_em = Column(DateTime, nullable=True)
     duracao_segundos = Column(Float, nullable=True)
     registros_processados = Column(Integer, nullable=True)

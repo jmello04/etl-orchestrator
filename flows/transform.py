@@ -1,13 +1,13 @@
-import pandas as pd
+import time
+from datetime import datetime, timezone
+
 import numpy as np
+import pandas as pd
 from loguru import logger
 from prefect import task
-import time
-from datetime import datetime
 
 
-@task(name="transformar-cotacoes")
-def transformar_cotacoes(dados_brutos: dict) -> pd.DataFrame:
+def transformar_cotacoes_logica(dados_brutos: dict) -> pd.DataFrame:
     inicio = time.perf_counter()
     logger.info("Iniciando transformação dos dados brutos.")
 
@@ -17,8 +17,7 @@ def transformar_cotacoes(dados_brutos: dict) -> pd.DataFrame:
         df = pd.DataFrame(registros)
 
         colunas_necessarias = {"bid", "ask", "high", "low", "timestamp", "code", "codein"}
-        colunas_presentes = set(df.columns)
-        faltando = colunas_necessarias - colunas_presentes
+        faltando = colunas_necessarias - set(df.columns)
         if faltando:
             logger.warning(f"Par {par}: colunas ausentes na API: {faltando}")
 
@@ -67,7 +66,7 @@ def transformar_cotacoes(dados_brutos: dict) -> pd.DataFrame:
     df_final = pd.concat(frames, ignore_index=True)
     df_final = df_final.dropna(subset=["compra", "venda", "data_referencia"])
     df_final = df_final.drop_duplicates(subset=["par_moeda", "data_referencia"])
-    df_final["processado_em"] = datetime.utcnow()
+    df_final["processado_em"] = datetime.now(timezone.utc).replace(tzinfo=None)
 
     duracao = time.perf_counter() - inicio
     logger.info(
@@ -75,3 +74,8 @@ def transformar_cotacoes(dados_brutos: dict) -> pd.DataFrame:
         f"{len(df_final)} registros prontos para carga."
     )
     return df_final
+
+
+@task(name="transformar-cotacoes")
+def transformar_cotacoes(dados_brutos: dict) -> pd.DataFrame:
+    return transformar_cotacoes_logica(dados_brutos)

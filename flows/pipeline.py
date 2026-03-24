@@ -1,8 +1,8 @@
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
 from loguru import logger
 from prefect import flow
-from prefect.schedules import Interval
 
 from flows.extract import extrair_cotacoes
 from flows.transform import transformar_cotacoes
@@ -19,7 +19,7 @@ from app.infra.database.repository import PipelineRunRepository
 )
 def pipeline_cotacoes(run_id: int | None = None) -> dict:
     inicio_total = time.perf_counter()
-    inicio_dt = datetime.utcnow()
+    inicio_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
     logger.info("=" * 60)
     logger.info("PIPELINE ETL — COTAÇÕES FINANCEIRAS — INICIADO")
@@ -55,7 +55,7 @@ def pipeline_cotacoes(run_id: int | None = None) -> dict:
         logger.info(f"[3/3] CARGA concluída em {t1 - t0:.2f}s")
 
         duracao_total = time.perf_counter() - inicio_total
-        fim_dt = datetime.utcnow()
+        fim_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
         repo.atualizar_run(
             run_id=run_id,
@@ -82,7 +82,7 @@ def pipeline_cotacoes(run_id: int | None = None) -> dict:
 
     except Exception as exc:
         duracao_total = time.perf_counter() - inicio_total
-        fim_dt = datetime.utcnow()
+        fim_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
         repo.atualizar_run(
             run_id=run_id,
