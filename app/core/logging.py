@@ -1,10 +1,25 @@
+"""Loguru configuration for structured, rotated application logging."""
+
 import sys
 from pathlib import Path
+from typing import Any
+
 from loguru import logger
+
 from app.core.config import get_settings
 
 
-def configurar_logger():
+def configurar_logger() -> Any:
+    """Configure loguru with console and file sinks.
+
+    Sets up three output destinations:
+    - Coloured stdout at the configured log level.
+    - Daily rotating log file at ``logs/etl_<date>.log``, retained 30 days.
+    - Persistent error-only log at ``logs/etl_errors.log``, retained 60 days.
+
+    Returns:
+        The configured loguru logger instance.
+    """
     settings = get_settings()
 
     logger.remove()
@@ -23,6 +38,7 @@ def configurar_logger():
     )
 
     Path("logs").mkdir(exist_ok=True)
+
     logger.add(
         "logs/etl_{time:YYYY-MM-DD}.log",
         level=settings.log_level,

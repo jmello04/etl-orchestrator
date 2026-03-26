@@ -1,14 +1,17 @@
+"""Prefect flow orchestrating the full ETL pipeline for exchange rate data."""
+
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from loguru import logger
 from prefect import flow
 
-from flows.extract import extrair_cotacoes
-from flows.transform import transformar_cotacoes
-from flows.load import carregar_cotacoes
 from app.infra.database.connection import init_db
 from app.infra.database.repository import PipelineRunRepository
+from flows.extract import extrair_cotacoes
+from flows.load import carregar_cotacoes
+from flows.transform import transformar_cotacoes
 
 
 @flow(
@@ -17,13 +20,33 @@ from app.infra.database.repository import PipelineRunRepository
     retries=1,
     retry_delay_seconds=30,
 )
-def pipeline_cotacoes(run_id: int | None = None) -> dict:
+def pipeline_cotacoes(run_id: Optional[int] = None) -> dict:
+    """Execute the full ETL pipeline: extract, transform, load.
+
+    Orchestrates the three Prefect tasks in sequence, persists execution
+    metadata via PipelineRunRepository, and returns a summary dictionary.
+    If ``run_id`` is provided the existing run record is updated; otherwise
+    a new one is created.
+
+    Args:
+        run_id: Optional primary key of an existing PipelineRun record.
+                When None a new run is registered before execution begins.
+
+    Returns:
+        Summary dictionary with keys: status, run_id, duracao_segundos,
+        registros_processados, iniciado_em, finalizado_em.
+
+    Raises:
+        Exception: Any unhandled error from the extract, transform or load
+                   step after all Prefect retries are exhausted. The run
+                   record is updated to "failed" before re-raising.
+    """
     inicio_total = time.perf_counter()
     inicio_dt = datetime.now(timezone.utc).replace(tzinfo=None)
 
     logger.info("=" * 60)
-    logger.info("PIPELINE ETL — COTAÇÕES FINANCEIRAS — INICIADO")
-    logger.info(f"Data/hora de início: {inicio_dt.isoformat()}")
+    logger.info("PIPELINE ETL — FINANCIAL EXCHANGE RATES — STARTED")
+    logger.info(f"Start time: {inicio_dt.isoformat()}")
     logger.info("=" * 60)
 
     init_db()
@@ -33,26 +56,20 @@ def pipeline_cotacoes(run_id: int | None = None) -> dict:
         run_id = repo.criar_run(status="running", iniciado_em=inicio_dt)
 
     try:
-        # ETAPA 1: EXTRAÇÃO
-        logger.info("[1/3] Iniciando etapa de EXTRAÇÃO")
+        logger.info("[1/3] Starting EXTRACT stage")
         t0 = time.perf_counter()
         dados_brutos = extrair_cotacoes()
-        t1 = time.perf_counter()
-        logger.info(f"[1/3] EXTRAÇÃO concluída em {t1 - t0:.2f}s")
+        logger.info(f"[1/3] EXTRACT completed in {time.perf_counter() - t0:.2f}s")
 
-        # ETAPA 2: TRANSFORMAÇÃO
-        logger.info("[2/3] Iniciando etapa de TRANSFORMAÇÃO")
+        logger.info("[2/3] Starting TRANSFORM stage")
         t0 = time.perf_counter()
         df_transformado = transformar_cotacoes(dados_brutos)
-        t1 = time.perf_counter()
-        logger.info(f"[2/3] TRANSFORMAÇÃO concluída em {t1 - t0:.2f}s")
+        logger.info(f"[2/3] TRANSFORM completed in {time.perf_counter() - t0:.2f}s")
 
-        # ETAPA 3: CARGA
-        logger.info("[3/3] Iniciando etapa de CARGA")
+        logger.info("[3/3] Starting LOAD stage")
         t0 = time.perf_counter()
         total_registros = carregar_cotacoes(df_transformado)
-        t1 = time.perf_counter()
-        logger.info(f"[3/3] CARGA concluída em {t1 - t0:.2f}s")
+        logger.info(f"[3/3] LOAD completed in {time.perf_counter() - t0:.2f}s")
 
         duracao_total = time.perf_counter() - inicio_total
         fim_dt = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -66,9 +83,9 @@ def pipeline_cotacoes(run_id: int | None = None) -> dict:
         )
 
         logger.success("=" * 60)
-        logger.success("PIPELINE CONCLUÍDO COM SUCESSO")
-        logger.success(f"Duração total: {duracao_total:.2f}s")
-        logger.success(f"Registros processados: {total_registros}")
+        logger.success("PIPELINE COMPLETED SUCCESSFULLY")
+        logger.success(f"Total duration: {duracao_total:.2f}s")
+        logger.success(f"Records processed: {total_registros}")
         logger.success("=" * 60)
 
         return {
@@ -93,14 +110,19 @@ def pipeline_cotacoes(run_id: int | None = None) -> dict:
         )
 
         logger.error("=" * 60)
-        logger.error("ALERTA: PIPELINE FALHOU APÓS TODAS AS TENTATIVAS")
-        logger.error(f"Erro: {exc}")
-        logger.error(f"Duração até falha: {duracao_total:.2f}s")
+        logger.error("PIPELINE FAILED AFTER ALL RETRIES")
+        logger.error(f"Error: {exc}")
+        logger.error(f"Duration until failure: {duracao_total:.2f}s")
         logger.error("=" * 60)
         raise
 
 
-def iniciar_agendamento():
+def iniciar_agendamento() -> None:
+    """Register the pipeline flow with Prefect for scheduled execution.
+
+    Deploys the flow with a 12-hour interval using Prefect's serve API.
+    This function is the entry point when running the scheduler process.
+    """
     pipeline_cotacoes.serve(
         name="agendamento-12h",
         interval=timedelta(hours=12),

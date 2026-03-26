@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Query
+"""Endpoints for querying processed exchange rate data."""
+
 from typing import Optional
+
+from fastapi import APIRouter, Query
 
 from app.infra.database.connection import init_db
 from app.infra.database.repository import CotacaoRepository
@@ -23,8 +26,23 @@ def listar_cotacoes(
         description="Par de moeda (ex: USD-BRL, EUR-BRL)",
         examples=["USD-BRL"],
     ),
-    limite: int = Query(default=100, ge=1, le=500, description="Máximo de registros retornados"),
+    limite: int = Query(
+        default=100,
+        ge=1,
+        le=500,
+        description="Máximo de registros retornados",
+    ),
 ) -> ListaCotacoesResponse:
+    """Return processed exchange rate records stored in the database.
+
+    Args:
+        par_moeda: Optional currency pair filter. When omitted all pairs
+                   are returned.
+        limite: Upper bound on the number of records in the response.
+
+    Returns:
+        Paginated list of cotacao records with total count and pair label.
+    """
     init_db()
     repo = CotacaoRepository()
     cotacoes = repo.listar_cotacoes(par_moeda=par_moeda, limite=limite)

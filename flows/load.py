@@ -1,3 +1,5 @@
+"""Prefect load task: upserts transformed exchange rate data into PostgreSQL."""
+
 import time
 
 import pandas as pd
@@ -12,8 +14,22 @@ from app.infra.database.models import Cotacao
 
 
 def carregar_cotacoes_logica(df: pd.DataFrame) -> int:
+    """Upsert exchange rate records into the cotacoes table.
+
+    Uses PostgreSQL ``ON CONFLICT DO UPDATE`` (upsert) so that re-running
+    the pipeline is idempotent — existing rows are refreshed rather than
+    duplicated. Tracks whether each statement resulted in an insert or an
+    update via the ``xmax`` system column.
+
+    Args:
+        df: Clean DataFrame produced by the transform step. Must contain the
+            columns expected by the Cotacao model.
+
+    Returns:
+        Total number of rows affected (inserts + updates).
+    """
     inicio = time.perf_counter()
-    logger.info(f"Iniciando carga de {len(df)} registros no PostgreSQL.")
+    logger.info(f"Starting load of {len(df)} records into PostgreSQL.")
 
     engine = get_engine()
     registros = df.to_dict(orient="records")
@@ -53,7 +69,9 @@ def carregar_cotacoes_logica(df: pd.DataFrame) -> int:
                     },
                 )
                 .returning(
-                    literal_column("(xmax::text::int > 0)", Boolean).label("foi_atualizado")
+                    literal_column("(xmax::text::int > 0)", Boolean).label(
+                        "foi_atualizado"
+                    )
                 )
             )
             resultado = conn.execute(stmt)
@@ -65,12 +83,20 @@ def carregar_cotacoes_logica(df: pd.DataFrame) -> int:
 
     duracao = time.perf_counter() - inicio
     logger.success(
-        f"Carga concluída em {duracao:.2f}s — "
-        f"{inseridos} inseridos, {atualizados} atualizados."
+        f"Load completed in {duracao:.2f}s — "
+        f"{inseridos} inserted, {atualizados} updated."
     )
     return inseridos + atualizados
 
 
 @task(name="carregar-cotacoes")
 def carregar_cotacoes(df: pd.DataFrame) -> int:
+    """Prefect task wrapper for :func:`carregar_cotacoes_logica`.
+
+    Args:
+        df: Clean DataFrame from the transform step.
+
+    Returns:
+        Total number of rows affected (inserts + updates).
+    """
     return carregar_cotacoes_logica(df)

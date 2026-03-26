@@ -1,5 +1,8 @@
+"""Prefect transform task: normalises raw API data into a typed DataFrame."""
+
 import time
 from datetime import datetime, timezone
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -7,11 +10,33 @@ from loguru import logger
 from prefect import task
 
 
-def transformar_cotacoes_logica(dados_brutos: dict) -> pd.DataFrame:
-    inicio = time.perf_counter()
-    logger.info("Iniciando transformação dos dados brutos.")
+def transformar_cotacoes_logica(dados_brutos: dict[str, list[dict[str, Any]]]) -> pd.DataFrame:
+    """Normalise raw API records into a clean DataFrame ready for loading.
 
-    frames = []
+    For each currency pair:
+    - Renames API fields to domain column names.
+    - Converts price columns to float.
+    - Derives the reference date from the Unix timestamp.
+    - Computes period statistics (average, min, max).
+
+    After processing all pairs the frames are concatenated, rows with null
+    prices or dates are dropped, duplicates on (par_moeda, data_referencia)
+    are removed, and a processing timestamp is added.
+
+    Args:
+        dados_brutos: Dictionary mapping currency pair labels to lists of raw
+                      API record dictionaries, as returned by the extract step.
+
+    Returns:
+        Clean pandas DataFrame with one row per (pair, date) combination.
+
+    Raises:
+        ValueError: If the input dictionary is empty or yields no valid rows.
+    """
+    inicio = time.perf_counter()
+    logger.info("Starting transformation of raw data.")
+
+    frames: list[pd.DataFrame] = []
 
     for par, registros in dados_brutos.items():
         df = pd.DataFrame(registros)
@@ -19,24 +44,28 @@ def transformar_cotacoes_logica(dados_brutos: dict) -> pd.DataFrame:
         colunas_necessarias = {"bid", "ask", "high", "low", "timestamp", "code", "codein"}
         faltando = colunas_necessarias - set(df.columns)
         if faltando:
-            logger.warning(f"Par {par}: colunas ausentes na API: {faltando}")
+            logger.warning(f"Pair {par}: columns missing from API response: {faltando}")
 
-        df = df.rename(columns={
-            "bid": "compra",
-            "ask": "venda",
-            "high": "maximo",
-            "low": "minimo",
-            "timestamp": "timestamp_unix",
-        })
+        df = df.rename(
+            columns={
+                "bid": "compra",
+                "ask": "venda",
+                "high": "maximo",
+                "low": "minimo",
+                "timestamp": "timestamp_unix",
+            }
+        )
 
         for col in ["compra", "venda", "maximo", "minimo"]:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         if "timestamp_unix" in df.columns:
-            df["data_referencia"] = pd.to_datetime(
-                df["timestamp_unix"].astype("int64"), unit="s", utc=True
-            ).dt.tz_convert("America/Sao_Paulo").dt.date
+            df["data_referencia"] = (
+                pd.to_datetime(df["timestamp_unix"].astype("int64"), unit="s", utc=True)
+                .dt.tz_convert("America/Sao_Paulo")
+                .dt.date
+            )
 
         df["par_moeda"] = par
 
@@ -51,11 +80,11 @@ def transformar_cotacoes_logica(dados_brutos: dict) -> pd.DataFrame:
         df["maximo_periodo"] = round(maximo_periodo, 4)
 
         logger.info(
-            f"Par {par} — estatísticas do período: "
-            f"média_compra={media_compra:.4f}, "
-            f"média_venda={media_venda:.4f}, "
-            f"mínimo={minimo_periodo:.4f}, "
-            f"máximo={maximo_periodo:.4f}"
+            f"Pair {par} — period statistics: "
+            f"avg_buy={media_compra:.4f}, "
+            f"avg_sell={media_venda:.4f}, "
+            f"min={minimo_periodo:.4f}, "
+            f"max={maximo_periodo:.4f}"
         )
 
         frames.append(df)
@@ -70,12 +99,20 @@ def transformar_cotacoes_logica(dados_brutos: dict) -> pd.DataFrame:
 
     duracao = time.perf_counter() - inicio
     logger.info(
-        f"Transformação concluída em {duracao:.2f}s — "
-        f"{len(df_final)} registros prontos para carga."
+        f"Transformation completed in {duracao:.2f}s — "
+        f"{len(df_final)} records ready for loading."
     )
     return df_final
 
 
 @task(name="transformar-cotacoes")
-def transformar_cotacoes(dados_brutos: dict) -> pd.DataFrame:
+def transformar_cotacoes(dados_brutos: dict[str, list[dict[str, Any]]]) -> pd.DataFrame:
+    """Prefect task wrapper for :func:`transformar_cotacoes_logica`.
+
+    Args:
+        dados_brutos: Raw API data from the extract step.
+
+    Returns:
+        Clean DataFrame ready for the load step.
+    """
     return transformar_cotacoes_logica(dados_brutos)
