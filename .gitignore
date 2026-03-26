@@ -1,35 +1,26 @@
-# Ambiente virtual
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.env
+.env.local
+.env.production
+.env.staging
 .venv/
 venv/
-env/
-
-# Variáveis de ambiente
-.env
-
-# Cache Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-
-# Pytest
+ENV/
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Logs
-logs/*.log
-
-# IDEs
-.vscode/
+.mypy_cache/
+.ruff_cache/
 .idea/
+.vscode/
 *.swp
-
-# Build
-dist/
-build/
-*.egg-info/
-
-# Prefect
+.DS_Store
+Thumbs.db
+*.log
+logs/
+!logs/.gitkeep
 .prefect/
