@@ -2,7 +2,7 @@
 
 # ETL Orchestrator
 
-### Pipeline ETL de cotações financeiras com orquestração automática, retry, logs estruturados e CI/CD
+**Pipeline ETL orquestrado para cotacoes financeiras USD-BRL e EUR-BRL**
 
 [![CI](https://github.com/jmello04/etl-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/jmello04/etl-orchestrator/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -11,450 +11,206 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Changelog](https://img.shields.io/badge/Changelog-v1.0.0-informational)](CHANGELOG.md)
-
-<br/>
-
-> Coleta · Transforma · Armazena · Agenda · Monitora
 
 </div>
 
 ---
 
-## Sumário
+## Sobre
 
-- [Visão Geral](#visão-geral)
-- [Arquitetura](#arquitetura)
-- [Stack Tecnológica](#stack-tecnológica)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Início Rápido](#início-rápido)
-- [Endpoints da API](#endpoints-da-api)
-- [Agendamento com Prefect](#agendamento-com-prefect)
-- [Testes](#testes)
-- [Migrações de Banco](#migrações-de-banco)
-- [CI/CD](#cicd)
-- [Logs](#logs)
-- [Variáveis de Ambiente](#variáveis-de-ambiente)
-- [Contribuindo](#contribuindo)
-- [Licença](#licença)
+ETL Orchestrator e um pipeline de engenharia de dados para coleta e analise de cotacoes financeiras **USD-BRL** e **EUR-BRL**. O sistema busca dados historicos de 30 dias via API publica, normaliza e calcula estatisticas com Pandas/NumPy, e persiste no PostgreSQL com upsert idempotente — tudo orquestrado pelo Prefect com agendamento automatico a cada 12 horas, retry em falhas e logs estruturados.
 
 ---
 
-## Visão Geral
+## Funcionalidades
 
-O **ETL Orchestrator** é um pipeline de engenharia de dados de nível produção para coleta e análise de cotações financeiras **USD-BRL** e **EUR-BRL**.
-
-O sistema coleta dados históricos de 30 dias via API pública, normaliza e calcula estatísticas com Pandas/NumPy, e persiste no PostgreSQL com upsert seguro — tudo orquestrado pelo Prefect com agendamento automático, retry em falhas e alertas por log.
-
-**O que o projeto demonstra na prática:**
-
-- Separação clara entre lógica de negócio e infraestrutura (testabilidade real)
-- Padrões de engenharia de dados: extração, transformação, carga, idempotência
-- Boas práticas de API: schemas tipados, status codes, middleware, exceptions customizadas
-- Operações profissionais: CI/CD, migrações versionadas, logs rotativos, Docker multi-stage
+| Recurso | Descricao |
+|---------|-----------|
+| Extracao automatica | Busca diaria de 30 dias de cotacoes USD-BRL e EUR-BRL via AwesomeAPI |
+| Transformacao tipada | Normalizacao, renomeacao de colunas, calculo de medias e extremos do periodo |
+| Carga idempotente | Upsert via `ON CONFLICT DO UPDATE` — re-executar o pipeline nao duplica dados |
+| Orquestracao Prefect | Retry automatico (3x por task, 1x por flow), UI de monitoramento em localhost:4200 |
+| API REST | Disparar pipeline manualmente, consultar historico de runs e cotacoes processadas |
+| Logs estruturados | Console colorido + arquivo rotativo diario + log de erros persistente |
+| Docker ready | App + PostgreSQL + Prefect Server com um unico comando |
+| Testes isolados | Testes unitarios sem dependencia de banco externo ou de rede |
 
 ---
 
 ## Arquitetura
 
 ```
-╔══════════════════════════════════════════════════════════════════════════╗
-║                    PIPELINE ETL — VISÃO DE ALTO NÍVEL                   ║
-╚══════════════════════════════════════════════════════════════════════════╝
+  AwesomeAPI (ext.)  --httpx+retry-->  [1] EXTRACT  (flows/extract)
+                                              |
+                                         JSON bruto
+                                              v
+                                       [2] TRANSFORM (flows/transform)
+                                         normalizacao / medias / deduplicacao
+                                              |
+                                          DataFrame
+                                              v
+  PostgreSQL 16  <--upsert ON CONFLICT--  [3] LOAD  (flows/load)
+    cotacoes
+    pipeline_runs
 
-  ┌──────────────────────┐     httpx + retry (3x)     ┌──────────────────┐
-  │   AwesomeAPI (ext.)  │ ──────────────────────────▶ │  [1] EXTRACT     │
-  │   USD-BRL · EUR-BRL  │                             │  flows/extract   │
-  └──────────────────────┘                             └────────┬─────────┘
-                                                                │ JSON bruto
-                                                                ▼
-                                                       ┌──────────────────┐
-                                                       │  [2] TRANSFORM   │
-                                                       │  flows/transform │
-                                                       │                  │
-                                                       │  • normalização  │
-                                                       │  • média/mín/máx │
-                                                       │  • deduplicação  │
-                                                       └────────┬─────────┘
-                                                                │ DataFrame
-                                                                ▼
-  ┌──────────────────────────────┐    upsert (ON CONFLICT)   ┌──────────────────┐
-  │         PostgreSQL 16        │ ◀──────────────────────── │  [3] LOAD        │
-  │  ┌────────────────────────┐  │                           │  flows/load      │
-  │  │  cotacoes              │  │                           └──────────────────┘
-  │  │  pipeline_runs         │  │
-  │  └────────────────────────┘  │
-  └──────────────────────────────┘
+  Prefect Scheduler -> dispara o pipeline a cada 12 horas
+  Prefect UI        -> http://localhost:4200
 
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  Prefect Scheduler  →  dispara o pipeline a cada 12 horas            │
-  │  Prefect UI         →  http://localhost:4200                          │
-  └──────────────────────────────────────────────────────────────────────┘
-
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  FastAPI REST API   →  http://localhost:8000                          │
-  │                                                                       │
-  │  POST /pipeline/run         Disparo manual do pipeline               │
-  │  GET  /pipeline/runs        Histórico de execuções com status        │
-  │  GET  /pipeline/runs/{id}   Detalhes de uma execução específica      │
-  │  GET  /data/cotacoes        Cotações processadas com filtros          │
-  └──────────────────────────────────────────────────────────────────────┘
+  FastAPI REST API  -> http://localhost:8000
+    POST /pipeline/run         Disparo manual
+    GET  /pipeline/runs        Historico de execucoes
+    GET  /pipeline/runs/{id}   Detalhes de uma execucao
+    GET  /data/cotacoes        Cotacoes processadas com filtros
 ```
 
 ---
 
-## Stack Tecnológica
+## Stack
 
-| Camada            | Tecnologia                    | Versão     | Função                                      |
-|-------------------|-------------------------------|------------|---------------------------------------------|
-| Linguagem         | Python                        | 3.12       | Base do projeto                             |
-| API REST          | FastAPI + Uvicorn             | 0.115      | Endpoints, schemas, middleware              |
-| Orquestração      | Prefect                       | 3.x        | Flow, tasks, retry, agendamento             |
-| Transformação     | Pandas + NumPy                | 2.x / 1.x  | Normalização e cálculo de estatísticas      |
-| ORM               | SQLAlchemy                    | 2.0        | Mapeamento objeto-relacional, upsert        |
-| Banco de dados    | PostgreSQL                    | 16         | Persistência com constraints e índices      |
-| Migrações         | Alembic                       | 1.13       | Versionamento do schema do banco            |
-| HTTP Client       | httpx                         | 0.27       | Requisições síncronas às APIs externas      |
-| Logs              | loguru                        | 0.7        | Logs estruturados, rotativos, por nível     |
-| Validação         | Pydantic v2                   | 2.9        | Schemas de request/response tipados         |
-| Testes            | pytest + respx + pytest-mock  | 8.x        | Testes unitários com mocks de HTTP e DB     |
-| Linting           | ruff                          | 0.4        | Análise estática e formatação               |
-| Containers        | Docker + Compose              | —          | Build multi-stage, usuário não-root         |
-| CI/CD             | GitHub Actions                | —          | Lint → Testes → Build automáticos           |
+| Camada | Tecnologia | Motivo |
+|--------|-----------|--------|
+| Orquestracao | Prefect 3.x | Retry nativo por task, UI de observabilidade e agendamento com serve() |
+| API REST | FastAPI + Uvicorn | Validacao automatica, OpenAPI nativo, performance assincrona |
+| Banco de dados | PostgreSQL 16 + SQLAlchemy | Upsert nativo, tipagem forte, migracoes versionadas via Alembic |
+| Transformacao | Pandas + NumPy | Manipulacao eficiente de series temporais e calculo vetorizado |
+| Extracao HTTP | httpx | Cliente moderno com suporte a timeout e context manager |
+| Logging | loguru | API fluente, rotacao de arquivos e formatacao colorida sem configuracao extra |
+| Testes | Pytest + respx + pytest-mock | Mocking de HTTP, banco e engine sem dependencias externas |
+| Infra | Docker + Docker Compose | Ambiente reproduzivel com Prefect Server incluso |
 
 ---
 
-## Estrutura do Projeto
+## Como executar
 
-```
-etl-orchestrator/
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml                  # Pipeline CI: lint → testes → docker build
-│
-├── alembic/                        # Migrações versionadas do banco de dados
-│   ├── versions/
-│   │   └── 001_initial_schema.py   # Schema inicial: cotacoes + pipeline_runs
-│   ├── env.py
-│   └── script.py.mako
-│
-├── app/                            # Aplicação FastAPI
-│   ├── main.py                     # Entry point: middlewares, routers, lifespan
-│   │
-│   ├── api/
-│   │   └── routes/
-│   │       ├── pipeline.py         # POST /pipeline/run · GET /pipeline/runs
-│   │       └── data.py             # GET /data/cotacoes
-│   │
-│   ├── schemas/                    # Contratos de entrada e saída (Pydantic v2)
-│   │   ├── cotacao.py
-│   │   └── pipeline.py
-│   │
-│   ├── core/                       # Configurações e utilitários transversais
-│   │   ├── config.py               # Settings via pydantic-settings + .env
-│   │   ├── logging.py              # Configuração do loguru
-│   │   ├── middleware.py           # Request ID + tempo de resposta
-│   │   └── exceptions.py           # Exceções HTTP customizadas
-│   │
-│   └── infra/
-│       └── database/
-│           ├── models.py           # Modelos SQLAlchemy ORM
-│           ├── connection.py       # Engine e session factory
-│           └── repository.py       # Repository pattern (acesso a dados)
-│
-├── flows/                          # Pipeline ETL com Prefect
-│   ├── extract.py                  # Task: coleta via httpx + retry automático
-│   ├── transform.py                # Task: normalização com Pandas/NumPy
-│   ├── load.py                     # Task: upsert no PostgreSQL
-│   └── pipeline.py                 # Flow principal + agendamento 12h
-│
-├── tests/                          # Suíte de testes automatizados
-│   ├── conftest.py                 # Fixtures compartilhadas
-│   ├── test_extract.py             # Testes com mock HTTP (respx)
-│   ├── test_transform.py           # Testes da lógica de transformação
-│   └── test_load.py                # Testes com mock de banco (pytest-mock)
-│
-├── logs/                           # Logs rotativos (gerados em runtime)
-│
-├── scheduler.py                    # Entry point do agendador Prefect
-├── alembic.ini                     # Configuração do Alembic
-├── pyproject.toml                  # Config centralizada: ruff, mypy, pytest
-├── Makefile                        # Comandos do desenvolvedor
-├── Dockerfile                      # Build multi-stage com usuário não-root
-├── docker-compose.yml              # API + PostgreSQL + Prefect Server
-├── requirements.txt                # Dependências Python
-├── .env.example                    # Variáveis de ambiente documentadas
-├── .pre-commit-config.yaml         # Hooks de qualidade de código
-├── CHANGELOG.md                    # Histórico de versões
-├── CONTRIBUTING.md                 # Guia para contribuidores
-└── README.md
-```
+### Pre-requisitos
+
+- [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/) **ou** Python 3.12+ com PostgreSQL
 
 ---
 
-## Início Rápido
-
-### Pré-requisitos
-
-- [Docker](https://docs.docker.com/get-docker/) e [Docker Compose](https://docs.docker.com/compose/)
-- Python 3.12+ (apenas para execução local sem Docker)
-
-### Com Docker (recomendado)
+### Opcao 1 -- Docker Compose (recomendado)
 
 ```bash
-# 1. Clone o repositório
 git clone https://github.com/jmello04/etl-orchestrator.git
 cd etl-orchestrator
 
-# 2. Configure as variáveis de ambiente
 cp .env.example .env
 
-# 3. Suba todos os containers
-make docker-up
+docker compose up --build
 ```
 
-Aguarde o boot completo (~15s) e acesse:
+Servicos disponiveis:
+- **API:** http://localhost:8000/docs
+- **Prefect UI:** http://localhost:4200
 
-| Serviço          | URL                          | Descrição                    |
-|------------------|------------------------------|------------------------------|
-| API (FastAPI)    | http://localhost:8000        | REST API principal           |
-| Swagger UI       | http://localhost:8000/docs   | Documentação interativa      |
-| ReDoc            | http://localhost:8000/redoc  | Documentação alternativa     |
-| Prefect UI       | http://localhost:4200        | Dashboard de orquestração    |
-| PostgreSQL       | localhost:5432               | Banco de dados               |
+---
 
-### Execução Local (sem Docker)
+### Opcao 2 -- Execucao local
 
 ```bash
-# 1. Crie e ative o ambiente virtual
 python -m venv .venv
-source .venv/bin/activate       # Linux/macOS
-.venv\Scripts\activate          # Windows
+source .venv/bin/activate        # Linux/macOS
+.venv\Scripts\activate           # Windows
 
-# 2. Instale as dependências
-make install
+pip install -r requirements.txt
 
-# 3. Configure o ambiente
 cp .env.example .env
 
-# 4. Suba apenas o banco de dados
-docker compose up postgres -d
+uvicorn app.main:app --reload
+```
 
-# 5. Execute as migrações
-make migrate
+Para rodar o agendamento Prefect localmente:
 
-# 6. Inicie a API
-make run
+```bash
+python flows/pipeline.py
 ```
 
 ---
 
-## Endpoints da API
+## Endpoints
 
-### `POST /pipeline/run` — Disparar o pipeline
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| `GET` | `/health` | Status da aplicacao |
+| `POST` | `/pipeline/run` | Dispara o pipeline ETL manualmente (async, 202) |
+| `GET` | `/pipeline/runs` | Historico de execucoes com status e duracao |
+| `GET` | `/pipeline/runs/{id}` | Detalhes de uma execucao especifica |
+| `GET` | `/data/cotacoes` | Cotacoes processadas (filtro por par e limite) |
 
-Executa o pipeline em background e retorna imediatamente com o `run_id`.
+**Exemplo -- disparar pipeline:**
 
 ```bash
 curl -X POST http://localhost:8000/pipeline/run
 ```
 
-```json
-{
-  "mensagem": "Pipeline iniciado com sucesso. Acompanhe pelo run_id.",
-  "run_id": 1,
-  "status": "running",
-  "iniciado_em": "2024-03-24T10:30:00"
-}
-```
-
-### `GET /pipeline/runs` — Histórico de execuções
+**Exemplo -- consultar cotacoes USD-BRL:**
 
 ```bash
-curl "http://localhost:8000/pipeline/runs?limite=10"
-```
-
-```json
-{
-  "total": 2,
-  "execucoes": [
-    {
-      "id": 2,
-      "status": "success",
-      "iniciado_em": "2024-03-24T22:30:00",
-      "finalizado_em": "2024-03-24T22:30:14",
-      "duracao_segundos": 14.2,
-      "registros_processados": 60,
-      "erro": null
-    }
-  ]
-}
-```
-
-### `GET /pipeline/runs/{id}` — Detalhes de uma execução
-
-```bash
-curl http://localhost:8000/pipeline/runs/1
-```
-
-### `GET /data/cotacoes` — Consultar cotações processadas
-
-```bash
-# Todas as cotações (padrão: últimas 100)
-curl http://localhost:8000/data/cotacoes
-
-# Filtrar por par de moeda e limitar resultados
-curl "http://localhost:8000/data/cotacoes?par_moeda=USD-BRL&limite=30"
-```
-
-```json
-{
-  "total": 30,
-  "par_moeda": "USD-BRL",
-  "cotacoes": [
-    {
-      "id": 1,
-      "par_moeda": "USD-BRL",
-      "data_referencia": "2024-03-24",
-      "compra": 5.1234,
-      "venda": 5.1350,
-      "maximo": 5.1500,
-      "minimo": 5.1100,
-      "media_compra_periodo": 5.0987,
-      "media_venda_periodo": 5.1102,
-      "minimo_periodo": 4.9800,
-      "maximo_periodo": 5.1500,
-      "processado_em": "2024-03-24T10:30:12"
-    }
-  ]
-}
+curl "http://localhost:8000/data/cotacoes?par_moeda=USD-BRL&limite=10"
 ```
 
 ---
 
-## Agendamento com Prefect
+## Variaveis de ambiente
 
-O pipeline executa **automaticamente a cada 12 horas** via Prefect.
-
-```bash
-# Ativar o agendador
-python scheduler.py
-```
-
-```bash
-# Executar o pipeline uma vez manualmente pelo terminal
-make pipeline
-```
-
-Acesse o dashboard do Prefect em **http://localhost:4200** para:
-- Visualizar o histórico completo de execuções
-- Monitorar logs em tempo real por etapa
-- Configurar notificações de falha
-- Pausar ou ajustar o agendamento
+| Variavel | Descricao | Padrao |
+|----------|-----------|--------|
+| `DATABASE_URL` | URL de conexao PostgreSQL | `postgresql://etl_user:etl_password@localhost:5432/etl_db` |
+| `APP_ENV` | Ambiente de execucao | `development` |
+| `LOG_LEVEL` | Nivel minimo de log | `INFO` |
+| `PREFECT_API_URL` | URL da API do Prefect Server | `http://localhost:4200/api` |
+| `CORS_ORIGINS` | Lista JSON de origens permitidas | `["http://localhost:3000","http://localhost:8000"]` |
 
 ---
 
 ## Testes
 
 ```bash
-# Executar todos os testes
-make test
-
-# Com relatório de cobertura
-pytest tests/ -v --cov=app --cov=flows --cov-report=term-missing
-
-# Apenas um arquivo de testes
-pytest tests/test_transform.py -v
+pytest tests/ -v
 ```
 
-Os testes são totalmente isolados de serviços externos:
-- Chamadas HTTP mockadas com **respx**
-- Banco de dados mockado com **pytest-mock**
-- Nenhuma dependência de Docker ou rede externa
+Os testes usam mocks de HTTP (respx) e de engine de banco (pytest-mock) -- sem necessidade de PostgreSQL ou Prefect Server em execucao.
 
 ---
 
-## Migrações de Banco
-
-```bash
-# Aplicar todas as migrações pendentes
-make migrate
-
-# Criar uma nova migração a partir dos modelos
-alembic revision --autogenerate -m "adiciona_coluna_x"
-
-# Reverter a última migração
-alembic downgrade -1
-
-# Ver histórico de migrações
-alembic history
-```
-
----
-
-## CI/CD
-
-O pipeline de CI executa automaticamente em todo push para `main` ou `develop`
-e em todo Pull Request aberto para `main`.
+## Estrutura de pastas
 
 ```
-push → main / develop
-         │
-         ├── [1] Lint         ruff check . (análise estática)
-         │
-         ├── [2] Tests        pytest com PostgreSQL real no GitHub Actions
-         │        └── needs: lint
-         │
-         └── [3] Docker Build validação do Dockerfile multi-stage
-                  └── needs: tests
+etl-orchestrator/
++-- .github/workflows/ci.yml
++-- app/
+|   +-- main.py
+|   +-- api/routes/
+|   |   +-- data.py
+|   |   +-- pipeline.py
+|   +-- core/
+|   |   +-- config.py
+|   |   +-- exceptions.py
+|   |   +-- logging.py
+|   |   +-- middleware.py
+|   +-- infra/database/
+|   |   +-- connection.py
+|   |   +-- models.py
+|   |   +-- repository.py
+|   +-- schemas/
+|       +-- cotacao.py
+|       +-- pipeline.py
++-- flows/
+|   +-- extract.py
+|   +-- transform.py
+|   +-- load.py
+|   +-- pipeline.py
++-- alembic/
++-- tests/
++-- .env.example
++-- docker-compose.yml
++-- Dockerfile
++-- requirements.txt
++-- pyproject.toml
 ```
 
 ---
 
-## Logs
+## Licenca
 
-| Arquivo                        | Conteúdo                          | Rotação   | Retenção  |
-|--------------------------------|-----------------------------------|-----------|-----------|
-| `logs/etl_YYYY-MM-DD.log`      | Log completo de todas as etapas   | Diária    | 30 dias   |
-| `logs/etl_errors.log`          | Apenas erros e alertas críticos   | 50 MB     | 60 dias   |
-
-Cada requisição HTTP registra automaticamente:
-- Método e path
-- Status code e tempo de resposta
-- `X-Request-ID` único por requisição
-
----
-
-## Variáveis de Ambiente
-
-Copie `.env.example` para `.env` e ajuste conforme o ambiente:
-
-| Variável          | Padrão                                                  | Descrição                              |
-|-------------------|---------------------------------------------------------|----------------------------------------|
-| `DATABASE_URL`    | `postgresql://etl_user:etl_password@localhost/etl_db`   | String de conexão do PostgreSQL        |
-| `POSTGRES_USER`   | `etl_user`                                              | Usuário do banco (Docker Compose)      |
-| `POSTGRES_PASSWORD`| `etl_password`                                         | Senha do banco (Docker Compose)        |
-| `POSTGRES_DB`     | `etl_db`                                                | Nome do banco (Docker Compose)         |
-| `APP_ENV`         | `development`                                           | Ambiente: `development` ou `production`|
-| `LOG_LEVEL`       | `INFO`                                                  | `DEBUG` · `INFO` · `WARNING` · `ERROR` |
-| `PREFECT_API_URL` | `http://localhost:4200/api`                             | URL do servidor Prefect                |
-| `CORS_ORIGINS`    | `["http://localhost:3000","http://localhost:8000"]`      | Origens permitidas (lista JSON)        |
-
----
-
-## Contribuindo
-
-Contribuições são bem-vindas! Leia o [Guia de Contribuição](CONTRIBUTING.md) para entender o fluxo de trabalho, convenção de commits e padrões de código adotados.
-
----
-
-## Licença
-
-Distribuído sob a licença **MIT**. Consulte [LICENSE](LICENSE) para mais informações.
-
----
-
-<div align="center">
-<sub>Feito com foco em qualidade, organização e boas práticas de engenharia de dados.</sub>
-</div>
+Distribuido sob a licenca **MIT**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
