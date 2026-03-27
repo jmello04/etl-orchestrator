@@ -2,7 +2,7 @@
 
 # ETL Orchestrator
 
-**Pipeline ETL orquestrado para cotacoes financeiras USD-BRL e EUR-BRL**
+**Pipeline ETL orquestrado para cotações financeiras USD-BRL e EUR-BRL**
 
 [![CI](https://github.com/jmello04/etl-orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/jmello04/etl-orchestrator/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -18,22 +18,22 @@
 
 ## Sobre
 
-ETL Orchestrator e um pipeline de engenharia de dados para coleta e analise de cotacoes financeiras **USD-BRL** e **EUR-BRL**. O sistema busca dados historicos de 30 dias via API publica, normaliza e calcula estatisticas com Pandas/NumPy, e persiste no PostgreSQL com upsert idempotente — tudo orquestrado pelo Prefect com agendamento automatico a cada 12 horas, retry em falhas e logs estruturados.
+ETL Orchestrator é um pipeline de engenharia de dados para coleta e análise de cotações financeiras **USD-BRL** e **EUR-BRL**. O sistema busca dados históricos de 30 dias via API pública, normaliza e calcula estatísticas com Pandas/NumPy, e persiste no PostgreSQL com upsert idempotente — tudo orquestrado pelo Prefect com agendamento automático a cada 12 horas, retry em falhas e logs estruturados.
 
 ---
 
 ## Funcionalidades
 
-| Recurso | Descricao |
+| Recurso | Descrição |
 |---------|-----------|
-| Extracao automatica | Busca diaria de 30 dias de cotacoes USD-BRL e EUR-BRL via AwesomeAPI |
-| Transformacao tipada | Normalizacao, renomeacao de colunas, calculo de medias e extremos do periodo |
-| Carga idempotente | Upsert via `ON CONFLICT DO UPDATE` — re-executar o pipeline nao duplica dados |
-| Orquestracao Prefect | Retry automatico (3x por task, 1x por flow), UI de monitoramento em localhost:4200 |
-| API REST | Disparar pipeline manualmente, consultar historico de runs e cotacoes processadas |
-| Logs estruturados | Console colorido + arquivo rotativo diario + log de erros persistente |
-| Docker ready | App + PostgreSQL + Prefect Server com um unico comando |
-| Testes isolados | Testes unitarios sem dependencia de banco externo ou de rede |
+| Extração automática | Busca diária de 30 dias de cotações USD-BRL e EUR-BRL via AwesomeAPI |
+| Transformação tipada | Normalização, renomeação de colunas, cálculo de médias e extremos do período |
+| Carga idempotente | Upsert via `ON CONFLICT DO UPDATE` — re-executar o pipeline não duplica dados |
+| Orquestração Prefect | Retry automático (3x por task, 1x por flow), UI de monitoramento em localhost:4200 |
+| API REST | Disparar pipeline manualmente, consultar histórico de runs e cotações processadas |
+| Logs estruturados | Console colorido + arquivo rotativo diário + log de erros persistente |
+| Docker ready | App + PostgreSQL + Prefect Server com um único comando |
+| Testes isolados | Testes unitários sem dependência de banco externo ou de rede |
 
 ---
 
@@ -45,7 +45,7 @@ ETL Orchestrator e um pipeline de engenharia de dados para coleta e analise de c
                                          JSON bruto
                                               v
                                        [2] TRANSFORM (flows/transform)
-                                         normalizacao / medias / deduplicacao
+                                         normalização / médias / deduplicação
                                               |
                                           DataFrame
                                               v
@@ -58,9 +58,9 @@ ETL Orchestrator e um pipeline de engenharia de dados para coleta e analise de c
 
   FastAPI REST API  -> http://localhost:8000
     POST /pipeline/run         Disparo manual
-    GET  /pipeline/runs        Historico de execucoes
-    GET  /pipeline/runs/{id}   Detalhes de uma execucao
-    GET  /data/cotacoes        Cotacoes processadas com filtros
+    GET  /pipeline/runs        Histórico de execuções
+    GET  /pipeline/runs/{id}   Detalhes de uma execução
+    GET  /data/cotacoes        Cotações processadas com filtros
 ```
 
 ---
@@ -69,26 +69,26 @@ ETL Orchestrator e um pipeline de engenharia de dados para coleta e analise de c
 
 | Camada | Tecnologia | Motivo |
 |--------|-----------|--------|
-| Orquestracao | Prefect 3.x | Retry nativo por task, UI de observabilidade e agendamento com serve() |
-| API REST | FastAPI + Uvicorn | Validacao automatica, OpenAPI nativo, performance assincrona |
-| Banco de dados | PostgreSQL 16 + SQLAlchemy | Upsert nativo, tipagem forte, migracoes versionadas via Alembic |
-| Transformacao | Pandas + NumPy | Manipulacao eficiente de series temporais e calculo vetorizado |
-| Extracao HTTP | httpx | Cliente moderno com suporte a timeout e context manager |
-| Logging | loguru | API fluente, rotacao de arquivos e formatacao colorida sem configuracao extra |
-| Testes | Pytest + respx + pytest-mock | Mocking de HTTP, banco e engine sem dependencias externas |
-| Infra | Docker + Docker Compose | Ambiente reproduzivel com Prefect Server incluso |
+| Orquestração | Prefect 3.x | Retry nativo por task, UI de observabilidade e agendamento com serve() |
+| API REST | FastAPI + Uvicorn | Validação automática, OpenAPI nativo, performance assíncrona |
+| Banco de dados | PostgreSQL 16 + SQLAlchemy | Upsert nativo, tipagem forte, migrações versionadas via Alembic |
+| Transformação | Pandas + NumPy | Manipulação eficiente de séries temporais e cálculo vetorizado |
+| Extração HTTP | httpx | Cliente moderno com suporte a timeout e context manager |
+| Logging | loguru | API fluente, rotação de arquivos e formatação colorida sem configuração extra |
+| Testes | Pytest + respx + pytest-mock | Mocking de HTTP, banco e engine sem dependências externas |
+| Infra | Docker + Docker Compose | Ambiente reproduzível com Prefect Server incluso |
 
 ---
 
 ## Como executar
 
-### Pre-requisitos
+### Pré-requisitos
 
 - [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/) **ou** Python 3.12+ com PostgreSQL
 
 ---
 
-### Opcao 1 -- Docker Compose (recomendado)
+### Opção 1 — Docker Compose (recomendado)
 
 ```bash
 git clone https://github.com/jmello04/etl-orchestrator.git
@@ -99,13 +99,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Servicos disponiveis:
+Serviços disponíveis:
 - **API:** http://localhost:8000/docs
 - **Prefect UI:** http://localhost:4200
 
 ---
 
-### Opcao 2 -- Execucao local
+### Opção 2 — Execução local
 
 ```bash
 python -m venv .venv
@@ -129,21 +129,21 @@ python flows/pipeline.py
 
 ## Endpoints
 
-| Metodo | Rota | Descricao |
+| Método | Rota | Descrição |
 |--------|------|-----------|
-| `GET` | `/health` | Status da aplicacao |
+| `GET` | `/health` | Status da aplicação |
 | `POST` | `/pipeline/run` | Dispara o pipeline ETL manualmente (async, 202) |
-| `GET` | `/pipeline/runs` | Historico de execucoes com status e duracao |
-| `GET` | `/pipeline/runs/{id}` | Detalhes de uma execucao especifica |
-| `GET` | `/data/cotacoes` | Cotacoes processadas (filtro por par e limite) |
+| `GET` | `/pipeline/runs` | Histórico de execuções com status e duração |
+| `GET` | `/pipeline/runs/{id}` | Detalhes de uma execução específica |
+| `GET` | `/data/cotacoes` | Cotações processadas (filtro por par e limite) |
 
-**Exemplo -- disparar pipeline:**
+**Exemplo — disparar pipeline:**
 
 ```bash
 curl -X POST http://localhost:8000/pipeline/run
 ```
 
-**Exemplo -- consultar cotacoes USD-BRL:**
+**Exemplo — consultar cotações USD-BRL:**
 
 ```bash
 curl "http://localhost:8000/data/cotacoes?par_moeda=USD-BRL&limite=10"
@@ -151,13 +151,13 @@ curl "http://localhost:8000/data/cotacoes?par_moeda=USD-BRL&limite=10"
 
 ---
 
-## Variaveis de ambiente
+## Variáveis de ambiente
 
-| Variavel | Descricao | Padrao |
+| Variável | Descrição | Padrão |
 |----------|-----------|--------|
-| `DATABASE_URL` | URL de conexao PostgreSQL | `postgresql://etl_user:etl_password@localhost:5432/etl_db` |
-| `APP_ENV` | Ambiente de execucao | `development` |
-| `LOG_LEVEL` | Nivel minimo de log | `INFO` |
+| `DATABASE_URL` | URL de conexão PostgreSQL | `postgresql://etl_user:etl_password@localhost:5432/etl_db` |
+| `APP_ENV` | Ambiente de execução | `development` |
+| `LOG_LEVEL` | Nível mínimo de log | `INFO` |
 | `PREFECT_API_URL` | URL da API do Prefect Server | `http://localhost:4200/api` |
 | `CORS_ORIGINS` | Lista JSON de origens permitidas | `["http://localhost:3000","http://localhost:8000"]` |
 
@@ -169,7 +169,7 @@ curl "http://localhost:8000/data/cotacoes?par_moeda=USD-BRL&limite=10"
 pytest tests/ -v
 ```
 
-Os testes usam mocks de HTTP (respx) e de engine de banco (pytest-mock) -- sem necessidade de PostgreSQL ou Prefect Server em execucao.
+Os testes usam mocks de HTTP (respx) e de engine de banco (pytest-mock) — sem necessidade de PostgreSQL ou Prefect Server em execução.
 
 ---
 
@@ -177,40 +177,40 @@ Os testes usam mocks de HTTP (respx) e de engine de banco (pytest-mock) -- sem n
 
 ```
 etl-orchestrator/
-+-- .github/workflows/ci.yml
-+-- app/
-|   +-- main.py
-|   +-- api/routes/
-|   |   +-- data.py
-|   |   +-- pipeline.py
-|   +-- core/
-|   |   +-- config.py
-|   |   +-- exceptions.py
-|   |   +-- logging.py
-|   |   +-- middleware.py
-|   +-- infra/database/
-|   |   +-- connection.py
-|   |   +-- models.py
-|   |   +-- repository.py
-|   +-- schemas/
-|       +-- cotacao.py
-|       +-- pipeline.py
-+-- flows/
-|   +-- extract.py
-|   +-- transform.py
-|   +-- load.py
-|   +-- pipeline.py
-+-- alembic/
-+-- tests/
-+-- .env.example
-+-- docker-compose.yml
-+-- Dockerfile
-+-- requirements.txt
-+-- pyproject.toml
+├── .github/workflows/ci.yml
+├── app/
+│   ├── main.py
+│   ├── api/routes/
+│   │   ├── data.py
+│   │   └── pipeline.py
+│   ├── core/
+│   │   ├── config.py
+│   │   ├── exceptions.py
+│   │   ├── logging.py
+│   │   └── middleware.py
+│   ├── infra/database/
+│   │   ├── connection.py
+│   │   ├── models.py
+│   │   └── repository.py
+│   └── schemas/
+│       ├── cotacao.py
+│       └── pipeline.py
+├── flows/
+│   ├── extract.py
+│   ├── transform.py
+│   ├── load.py
+│   └── pipeline.py
+├── alembic/
+├── tests/
+├── .env.example
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── pyproject.toml
 ```
 
 ---
 
-## Licenca
+## Licença
 
-Distribuido sob a licenca **MIT**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
+Distribuído sob a licença **MIT**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
